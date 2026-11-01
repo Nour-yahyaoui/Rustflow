@@ -1,0 +1,68 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-requestlab}
+      POSTGRES_USER: ${POSTGRES_USER:-requestlab}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  migrate:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    command: ["node", "services/api/dist/migrate.js"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-requestlab}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-requestlab}
+    depends_on:
+      db:
+        condition: service_healthy
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/web.Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-requestlab}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-requestlab}
+      APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN in .env}
+      NODE_ENV: production
+      TRUST_PROXY_IP: "1"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+  jobs:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    command: ["node", "services/api/dist/jobs.js"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-requestlab}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-requestlab}
+      SMTP_URL: ${SMTP_URL:?Set SMTP_URL for email verification and reset delivery}
+      MAIL_FROM: ${MAIL_FROM:?Set MAIL_FROM}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+volumes:
+  postgres_data:
