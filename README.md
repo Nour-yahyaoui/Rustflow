@@ -1,4 +1,4 @@
-# RequestLab
+# Rustflow
 
 **A local-first API development workspace.** Build, send, inspect, and test requests without creating an account. This repository started as Rustflow and now contains the RequestLab desktop application, optional SaaS portal/API, and manual billing administration.
 
